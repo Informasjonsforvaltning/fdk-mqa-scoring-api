@@ -91,7 +91,7 @@ impl PgConn {
         Ok(())
     }
 
-    pub fn store_dataset(&mut self, assessment: DatasetAssessment) -> Result<(), DatabaseError> {
+    pub fn store_dataset_assessment(&mut self, assessment: DatasetAssessment) -> Result<(), DatabaseError> {
         use schema::dataset_assessments::dsl;
 
         diesel::insert_into(dsl::dataset_assessments)

@@ -20,3 +20,5 @@ pub mod score;
 pub use self::score::Score;
 pub mod score_post_request;
 pub use self::score_post_request::ScorePostRequest;
+pub mod success_response;
+pub use self::success_response::SuccessResponse;
