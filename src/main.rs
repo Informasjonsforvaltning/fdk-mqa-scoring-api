@@ -27,7 +27,7 @@ use crate::{
     database::{DatabaseError, PgPool},
     db_models::{DatasetAssessment, Dimension},
     error::Error,
-    models::{DatasetsRequest, DatasetsScores},
+    models::{DatasetsRequest, DatasetsScores, SuccessResponse},
 };
 
 mod database;
@@ -155,7 +155,7 @@ async fn update_assessment(
         };
 
         conn.drop_dataset_dimensions(&dataset_uri)?;
-        conn.store_dataset(assessment)?;
+        conn.store_dataset_assessment(assessment)?;
 
         for dimension in &update.scores.dataset.dimensions {
             conn.store_dimension(Dimension {
@@ -172,9 +172,12 @@ async fn update_assessment(
     .map_err(|e| Error::BlockingError(e.into()))?;
 
     match result {
-        Ok(_) => Ok(HttpResponse::Accepted()
-            .content_type(mime::APPLICATION_JSON)
-            .message_body("")),
+        Ok(_) => {
+            let response = SuccessResponse::new(true);
+            Ok(HttpResponse::Accepted()
+                .content_type(mime::APPLICATION_JSON)
+                .message_body(serde_json::to_string(&response)?))
+        }
         Err(e) => Err(e.into()),
     }
 }

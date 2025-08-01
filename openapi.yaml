@@ -139,24 +139,44 @@ components:
           type: integer
       required:
         - id
-        - metric
         - score
         - max_score
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Indicates if the operation was successful
+        message:
+          type: string
+          description: Optional message providing additional information
+      required:
+        - success
 
 paths:
   /api/assessments/{uuid}:
     get:
+      operationId: getAssessment
       parameters:
         - in: path
           name: uuid
           schema:
             type: string
+            format: uuid
           required: true
           description: Assessment UUID
+        - in: header
+          name: Accept
+          schema:
+            type: string
+            enum: [text/turtle, application/ld+json]
+          required: false
+          description: Content type preference for the response
       summary: Get dataset assessment
+      description: Retrieves a dataset assessment in either Turtle or JSON-LD format based on the Accept header
       responses:
         "200":
-          description: Ok
+          description: Assessment retrieved successfully
           content:
             application/ld+json:
               schema:
@@ -172,20 +192,28 @@ paths:
             text/turtle:
               schema:
                 type: string
-          headers: {}
-        "500":
-          description: Error
+        "404":
+          description: Assessment not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-          headers: {}
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
+      operationId: updateAssessment
+      security:
+        - apiKey: []
       parameters:
         - in: path
           name: uuid
           schema:
             type: string
+            format: uuid
           required: true
           description: Assessment UUID
       requestBody:
@@ -196,65 +224,88 @@ paths:
             schema:
               $ref: "#/components/schemas/ScorePostRequest"
       summary: Store dataset assessment
+      description: Stores a dataset assessment with scores. Requires API key authentication.
       responses:
-        "200":
-          description: Ok
-          content: {}
-          headers: {}
-        "500":
-          description: Error
+        "202":
+          description: Assessment accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                success: true
+        "401":
+          description: Unauthorized - Invalid or missing API key
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-          headers: {}
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/scores:
     post:
+      operationId: getScores
       requestBody:
-        description: Dataset uris
+        description: Dataset URIs to retrieve scores for
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/DatasetsRequest"
       summary: Get dataset assessment scores
+      description: Retrieves scores for multiple datasets
       responses:
         "200":
-          description: Ok
+          description: Scores retrieved successfully
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DatasetsScores"
-          headers: {}
         "500":
-          description: Error
+          description: Server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-          headers: {}
+
   /api/assessments:
     post:
+      operationId: getAssessments
+      parameters:
+        - in: header
+          name: Accept
+          schema:
+            type: string
+            enum: [text/turtle, application/ld+json]
+          required: false
+          description: Content type preference for the response
       requestBody:
-        description: Dataset uris
+        description: Dataset URIs to retrieve assessments for
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/DatasetsRequest"
       summary: Get dataset assessments
+      description: Retrieves assessments for multiple datasets in either Turtle or JSON-LD format based on the Accept header
       responses:
         "200":
-          description: Ok
+          description: Assessments retrieved successfully
           content:
-            application/json:
+            application/ld+json:
               schema:
-                $ref: "#/components/schemas/DatasetsGraphs"
-          headers: {}
+                type: string
+            text/turtle:
+              schema:
+                type: string
         "500":
-          description: Error
+          description: Server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-          headers: {}
