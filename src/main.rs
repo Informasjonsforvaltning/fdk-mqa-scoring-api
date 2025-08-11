@@ -308,7 +308,7 @@ fn app() -> App<
 
     App::new()
         .wrap(cors())
-        .app_data(web::PayloadConfig::default().limit(8_388_608))
+        .app_data(web::PayloadConfig::default().limit(50_000_000)) // 50 MB limit
         .app_data(web::Data::new(pool.clone()))
         .service(ping)
         .service(ready)
