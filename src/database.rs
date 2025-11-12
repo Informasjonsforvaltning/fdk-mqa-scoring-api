@@ -12,9 +12,11 @@ use crate::{
     models, schema,
 };
 
+/// Embedded database migrations for automatic schema management.
 pub const MIGRATIONS: diesel_migrations::EmbeddedMigrations = diesel_migrations::embed_migrations!("./migrations");
 type DB = diesel::pg::Pg;
 
+/// Runs all pending database migrations on the given connection.
 fn run_migration(conn: &mut impl diesel_migrations::MigrationHarness<DB>) {
     conn.run_pending_migrations(MIGRATIONS).unwrap();
 }
@@ -35,10 +37,19 @@ pub enum DatabaseError {
     SerdeError(#[from] serde_json::Error),
 }
 
+/// Retrieves an environment variable, returning a `DatabaseError` if not found.
 fn var(key: &'static str) -> Result<String, DatabaseError> {
     std::env::var(key).map_err(|e| DatabaseError::ConfigError(key, e.to_string()))
 }
 
+/// Constructs a PostgreSQL connection URL from environment variables.
+/// 
+/// Required environment variables:
+/// - `POSTGRES_HOST`: Database hostname
+/// - `POSTGRES_PORT`: Database port number
+/// - `POSTGRES_USERNAME`: Database username
+/// - `POSTGRES_PASSWORD`: Database password
+/// - `POSTGRES_DB_NAME`: Database name
 fn database_url() -> Result<String, DatabaseError> {
     let host = var("POSTGRES_HOST")?;
     let port = var("POSTGRES_PORT")?
@@ -52,6 +63,10 @@ fn database_url() -> Result<String, DatabaseError> {
     Ok(url)
 }
 
+/// Runs all pending database migrations.
+/// 
+/// This function establishes a connection to the database and applies any
+/// pending migrations defined in the `migrations/` directory.
 pub fn migrate_database() -> Result<(), DatabaseError> {
     let url = database_url()?;
     let mut conn = PgConnection::establish(&url)?;
@@ -60,10 +75,19 @@ pub fn migrate_database() -> Result<(), DatabaseError> {
     Ok(())
 }
 
+/// A connection pool for PostgreSQL database connections.
+/// 
+/// Uses r2d2 for connection pooling with a maximum of 2 connections.
+/// Connections are tested on checkout to ensure they're still valid.
 #[derive(Clone)]
 pub struct PgPool(Pool<ConnectionManager<PgConnection>>);
 
 impl PgPool {
+    /// Creates a new connection pool.
+    /// 
+    /// The pool is configured with:
+    /// - Maximum size: 2 connections
+    /// - Test on checkout: enabled (validates connections before use)
     pub fn new() -> Result<Self, DatabaseError> {
         let url = database_url()?;
         let manager = ConnectionManager::new(url);
@@ -75,14 +99,23 @@ impl PgPool {
         Ok(PgPool(pool))
     }
 
+    /// Gets a connection from the pool.
+    /// 
+    /// Returns an error if no connections are available or if the pool is closed.
     pub fn get(&self) -> Result<PgConn, DatabaseError> {
         Ok(PgConn(self.0.get()?))
     }
 }
 
+/// A pooled PostgreSQL database connection.
+/// 
+/// This connection is automatically returned to the pool when dropped.
 pub struct PgConn(PooledConnection<ConnectionManager<PgConnection>>);
 
 impl PgConn {
+    /// Tests the database connection by performing a simple count query.
+    /// 
+    /// This is used by the `/ping` endpoint to verify database connectivity.
     pub fn test_connection(&mut self) -> Result<(), DatabaseError> {
         use schema::dimensions::dsl;
         
@@ -90,6 +123,10 @@ impl PgConn {
         Ok(())
     }
 
+    /// Stores or updates a dataset assessment in the database.
+    /// 
+    /// If an assessment with the same ID already exists, it will be updated.
+    /// Otherwise, a new assessment will be inserted.
     pub fn store_dataset_assessment(&mut self, assessment: DatasetAssessment) -> Result<(), DatabaseError> {
         use schema::dataset_assessments::dsl;
 
@@ -103,6 +140,10 @@ impl PgConn {
         Ok(())
     }
 
+    /// Stores or updates a dimension score for a dataset.
+    /// 
+    /// If a dimension with the same dataset URI and ID already exists, it will be updated.
+    /// Otherwise, a new dimension will be inserted.
     pub fn store_dimension(&mut self, dimension: Dimension) -> Result<(), DatabaseError> {
         use schema::dimensions::dsl;
 
@@ -116,6 +157,10 @@ impl PgConn {
         Ok(())
     }
 
+    /// Deletes all dimension records for a given dataset URI.
+    /// 
+    /// This is typically called when updating a dataset assessment to remove
+    /// old dimension data before inserting new values.
     pub fn drop_dataset_dimensions(&mut self, dataset_uri: &str) -> Result<(), DatabaseError> {
         use schema::dimensions::dsl;
 
@@ -126,6 +171,9 @@ impl PgConn {
         Ok(())
     }
 
+    /// Retrieves the Turtle (RDF) format assessment for a given dataset assessment ID.
+    /// 
+    /// Returns `None` if the assessment doesn't exist, or `Some(turtle_string)` if found.
     pub fn turtle_assessment(
         &mut self,
         dataset_assessment: Uuid,
@@ -143,6 +191,9 @@ impl PgConn {
         }
     }
 
+    /// Retrieves the JSON-LD format assessment for a given dataset assessment ID.
+    /// 
+    /// Returns `None` if the assessment doesn't exist, or `Some(jsonld_string)` if found.
     pub fn jsonld_assessment(
         &mut self,
         dataset_assessment: Uuid,
@@ -160,7 +211,20 @@ impl PgConn {
         }
     }
 
-    /// NOTE!! Ensure that URIs are valid before calling this.
+    /// Retrieves JSON score data for multiple datasets.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `dataset_uris` - A vector of dataset URIs to fetch scores for
+    /// 
+    /// # Returns
+    /// 
+    /// A HashMap mapping dataset URIs to their `DatasetScore` objects.
+    /// 
+    /// # Note
+    /// 
+    /// Ensure that URIs are valid before calling this function, as they are
+    /// used directly in the SQL query.
     pub fn json_scores(
         &mut self,
         dataset_uris: &Vec<String>,
@@ -185,7 +249,30 @@ impl PgConn {
         Ok(dataset_scores)
     }
 
-    /// NOTE!! Ensure that URIs are valid before calling this.
+    /// Calculates average dimension scores across multiple datasets.
+    /// 
+    /// This function aggregates dimension scores (accessibility, findability, etc.)
+    /// by computing the average score and max_score for each dimension type
+    /// across all specified datasets.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `dataset_uris` - A vector of dataset URIs to aggregate dimensions for
+    /// 
+    /// # Returns
+    /// 
+    /// A vector of `DimensionAggregate` objects, sorted in a predefined order:
+    /// 1. Interoperability
+    /// 2. Findability
+    /// 3. Accessibility
+    /// 4. Contextuality
+    /// 5. Reusability
+    /// 
+    /// # Note
+    /// 
+    /// Ensure that URIs are valid before calling this function, as they are
+    /// used directly in the SQL query. The results are sorted to ensure
+    /// consistent ordering in API responses.
     pub fn dimension_aggregates(
         &mut self,
         dataset_uris: &Vec<String>,
@@ -202,7 +289,7 @@ impl PgConn {
         let aggregates: Vec<DimensionAggregate> =
             diesel::dsl::sql_query(q).get_results(&mut self.0)?;
 
-        // Define the expected order based on the test expectations
+        // Define the expected order for consistent API responses
         let order = [
             "https://data.norge.no/vocabulary/dcatno-mqa#interoperability",
             "https://data.norge.no/vocabulary/dcatno-mqa#findability",
@@ -226,7 +313,7 @@ impl PgConn {
             )
             .collect();
 
-        // Sort by the predefined order
+        // Sort by the predefined order to ensure consistent API responses
         result.sort_by(|a, b| {
             let a_pos = order.iter().position(|&x| x == a.id).unwrap_or(usize::MAX);
             let b_pos = order.iter().position(|&x| x == b.id).unwrap_or(usize::MAX);
