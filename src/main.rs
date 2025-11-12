@@ -362,6 +362,9 @@ mod tests {
             Err(err) => println!("Error loading .env.test: {}", err),
         }
 
+        // Run migrations before tests
+        migrate_database().unwrap();
+
         let app = test::init_service(app()).await;
         let req = test::TestRequest::get()
             .insert_header(ContentType::plaintext())

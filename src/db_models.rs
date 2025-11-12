@@ -2,7 +2,7 @@ use super::schema::*;
 use diesel::sql_types::Double;
 
 #[derive(Insertable, Queryable, AsChangeset)]
-#[table_name = "dataset_assessments"]
+#[diesel(table_name = dataset_assessments)]
 pub struct DatasetAssessment {
     pub id: String,
     pub dataset_uri: String,
@@ -12,7 +12,7 @@ pub struct DatasetAssessment {
 }
 
 #[derive(Insertable, Queryable, AsChangeset)]
-#[table_name = "dimensions"]
+#[diesel(table_name = dimensions)]
 pub struct Dimension {
     pub dataset_uri: String,
     pub id: String,
@@ -21,11 +21,11 @@ pub struct Dimension {
 }
 
 #[derive(QueryableByName)]
-#[table_name = "dimensions"]
+#[diesel(table_name = dimensions)]
 pub struct DimensionAggregate {
     pub id: String,
-    #[sql_type = "Double"]
+    #[diesel(sql_type = Double)]
     pub score: f64,
-    #[sql_type = "Double"]
+    #[diesel(sql_type = Double)]
     pub max_score: f64,
 }
