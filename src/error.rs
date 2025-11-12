@@ -33,9 +33,19 @@ impl ResponseError for Error {
             InvalidID(_) => HttpResponse::BadRequest().json(ErrorReply::error(self)),
             InvalidUri(_) => HttpResponse::BadRequest().json(ErrorReply::error(self)),
             Unauthorized(_) => HttpResponse::Unauthorized().json(ErrorReply::error(self)),
+            SerdeJsonError(ref e) => {
+                tracing::error!(
+                    error = format!("{:?}", e).as_str(),
+                    error_message = e.to_string().as_str(),
+                    error_type = "SerdeJsonError",
+                    "JSON parsing error occurred"
+                );
+                HttpResponse::BadRequest().json(ErrorReply::error(self))
+            }
             _ => {
                 tracing::error!(
                     error = format!("{:?}", self).as_str(),
+                    error_type = format!("{:?}", std::mem::discriminant(self)).as_str(),
                     "error occured when processing request"
                 );
                 HttpResponse::InternalServerError().json(ErrorReply::error(self))

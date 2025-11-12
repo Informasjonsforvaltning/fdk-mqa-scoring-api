@@ -138,7 +138,36 @@ async fn update_assessment(
 ) -> Result<impl Responder, Error> {
     validate_api_key(request)?;
     let uuid = parse_uuid(id.into_inner())?;
-    let update: models::ScorePostRequest = serde_json::from_str(from_utf8(&body)?)?;
+    
+    let body_str = from_utf8(&body)?;
+    tracing::debug!(
+        endpoint = "/api/assessments/{id}",
+        assessment_id = uuid.to_string().as_str(),
+        body_length = body.len(),
+        body_preview = if body_str.len() > 200 { 
+            &body_str[..200] 
+        } else { 
+            body_str 
+        },
+        "Parsing request body for update_assessment"
+    );
+    
+    let update: models::ScorePostRequest = serde_json::from_str(body_str)
+        .map_err(|e| {
+            tracing::error!(
+                endpoint = "/api/assessments/{id}",
+                assessment_id = uuid.to_string().as_str(),
+                body_length = body.len(),
+                body_preview = if body_str.len() > 500 { 
+                    &body_str[..500] 
+                } else { 
+                    body_str 
+                },
+                error = format!("{:?}", e).as_str(),
+                "Failed to parse JSON in update_assessment"
+            );
+            e
+        })?;
     let dataset_uri = update.scores.as_ref().dataset.id.clone();
 
     let result: Result<(), DatabaseError> = web::block(move || {
@@ -184,7 +213,33 @@ async fn update_assessment(
 
 #[post("/api/scores")]
 async fn scores(pool: web::Data<PgPool>, body: web::Bytes) -> Result<impl Responder, Error> {
-    let data = serde_json::from_str::<DatasetsRequest>(from_utf8(&body)?)?;
+    let body_str = from_utf8(&body)?;
+    tracing::debug!(
+        endpoint = "/api/scores",
+        body_length = body.len(),
+        body_preview = if body_str.len() > 200 { 
+            &body_str[..200] 
+        } else { 
+            body_str 
+        },
+        "Parsing request body for scores"
+    );
+    
+    let data = serde_json::from_str::<DatasetsRequest>(body_str)
+        .map_err(|e| {
+            tracing::error!(
+                endpoint = "/api/scores",
+                body_length = body.len(),
+                body_preview = if body_str.len() > 500 { 
+                    &body_str[..500] 
+                } else { 
+                    body_str 
+                },
+                error = format!("{:?}", e).as_str(),
+                "Failed to parse JSON in scores endpoint"
+            );
+            e
+        })?;
     // Check that uris are valid, but disregard parsed value.
     let _parsed_dataset_uris = data
         .datasets
@@ -219,7 +274,33 @@ async fn assessments(
     pool: web::Data<PgPool>,
     body: web::Bytes,
 ) -> Result<impl Responder, Error> {
-    let data = serde_json::from_str::<DatasetsRequest>(from_utf8(&body)?)?;
+    let body_str = from_utf8(&body)?;
+    tracing::debug!(
+        endpoint = "/api/assessments",
+        body_length = body.len(),
+        body_preview = if body_str.len() > 200 { 
+            &body_str[..200] 
+        } else { 
+            body_str 
+        },
+        "Parsing request body for assessments"
+    );
+    
+    let data = serde_json::from_str::<DatasetsRequest>(body_str)
+        .map_err(|e| {
+            tracing::error!(
+                endpoint = "/api/assessments",
+                body_length = body.len(),
+                body_preview = if body_str.len() > 500 { 
+                    &body_str[..500] 
+                } else { 
+                    body_str 
+                },
+                error = format!("{:?}", e).as_str(),
+                "Failed to parse JSON in assessments endpoint"
+            );
+            e
+        })?;
     // Check that uris are valid, but disregard parsed value.
     let _parsed_dataset_uris = data
         .datasets
