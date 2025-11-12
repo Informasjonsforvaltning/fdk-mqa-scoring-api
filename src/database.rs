@@ -243,7 +243,42 @@ impl PgConn {
 
         let dataset_scores = rows
             .into_iter()
-            .map(|(dataset_uri, json)| Ok((dataset_uri, serde_json::from_str(&json)?)))
+            .map(|(dataset_uri, json)| {
+                if json.is_empty() {
+                    tracing::error!(
+                        dataset_uri = dataset_uri.as_str(),
+                        json_length = json.len(),
+                        "Empty JSON string found in database for dataset"
+                    );
+                    // Create an EOF error by attempting to parse empty string
+                    let e = serde_json::from_str::<models::DatasetScore>("")
+                        .map_err(|e| {
+                            tracing::error!(
+                                dataset_uri = dataset_uri.as_str(),
+                                error = format!("{:?}", e).as_str(),
+                                "Empty JSON string in database caused EOF error"
+                            );
+                            DatabaseError::SerdeError(e)
+                        })
+                        .unwrap_err();
+                    return Err(e);
+                }
+                serde_json::from_str(&json).map_err(|e| {
+                    tracing::error!(
+                        dataset_uri = dataset_uri.as_str(),
+                        json_length = json.len(),
+                        json_preview = if json.len() > 500 { 
+                            &json[..500] 
+                        } else { 
+                            &json 
+                        },
+                        error = format!("{:?}", e).as_str(),
+                        "Failed to parse JSON from database in json_scores"
+                    );
+                    DatabaseError::SerdeError(e)
+                })
+                .map(|score| (dataset_uri, score))
+            })
             .collect::<Result<HashMap<String, models::DatasetScore>, DatabaseError>>()?;
 
         Ok(dataset_scores)
