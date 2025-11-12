@@ -356,13 +356,20 @@ mod tests {
     use serde_json::Value;
     use uuid::Uuid;
 
+    /// Helper function for testing GET endpoints that should return success.
+    /// 
+    /// This function:
+    /// 1. Loads test environment variables from `.env.test`
+    /// 2. Runs database migrations to ensure the schema is up to date
+    /// 3. Makes a GET request to the specified path
+    /// 4. Asserts that the response status is successful
     async fn test_get_ok(path: &str) {
         match from_filename(".env.test") {
             Ok(_) => println!("Successfully loaded .env.test"),
             Err(err) => println!("Error loading .env.test: {}", err),
         }
 
-        // Run migrations before tests
+        // Run migrations before tests to ensure database schema is ready
         migrate_database().unwrap();
 
         let app = test::init_service(app()).await;
