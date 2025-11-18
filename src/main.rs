@@ -71,7 +71,12 @@ fn validate_api_key(request: HttpRequest) -> Result<(), Error> {
 }
 
 #[get("/ping")]
-async fn ping(pool: web::Data<PgPool>) -> Result<impl Responder, Error> {
+async fn ping() -> Result<impl Responder, Error> {
+    Ok("pong")
+}
+
+#[get("/ready")]
+async fn ready(pool: web::Data<PgPool>) -> Result<impl Responder, Error> {
     let result = web::block(move || {
         // Obtaining a connection from the pool is also a potentially blocking operation.
         // So, it should be called within the `web::block` closure, as well.
@@ -82,14 +87,9 @@ async fn ping(pool: web::Data<PgPool>) -> Result<impl Responder, Error> {
     .map_err(|e| Error::BlockingError(e.into()))?;
 
     match result {
-        Ok(_) => Ok("pong"),
+        Ok(_) => Ok("ok"),
         Err(e) => Err(e.into()),
     }
-}
-
-#[get("/ready")]
-async fn ready() -> Result<impl Responder, Error> {
-    Ok("ok")
 }
 
 #[get("/api/assessments/{id}")]
