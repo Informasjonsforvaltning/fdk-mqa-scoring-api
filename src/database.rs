@@ -113,13 +113,26 @@ impl PgPool {
 pub struct PgConn(PooledConnection<ConnectionManager<PgConnection>>);
 
 impl PgConn {
-    /// Tests the database connection by performing a simple count query.
+    /// Tests the database connection by performing a lightweight query.
     /// 
-    /// This is used by the `/ping` endpoint to verify database connectivity.
+    /// This is used by the `/ready` endpoint to verify database connectivity.
+    /// Uses a simple `SELECT 1` query which is the most efficient way to test
+    /// a connection without touching any tables.
     pub fn test_connection(&mut self) -> Result<(), DatabaseError> {
-        use schema::dimensions::dsl;
+        use diesel::sql_query;
+        use diesel::sql_types::Integer;
+        use diesel::deserialize::QueryableByName;
         
-        let _: i64 = dsl::dimensions.select(diesel::dsl::count(dsl::id)).first(&mut self.0)?;
+        #[derive(QueryableByName)]
+        struct TestResult {
+            #[diesel(sql_type = Integer)]
+            #[diesel(column_name = "one")]
+            _value: i32,
+        }
+        
+        // Use a simple SELECT 1 query with an alias - this is the lightest possible query
+        // and doesn't require any table access or counting
+        let _: TestResult = sql_query("SELECT 1 AS one").get_result(&mut self.0)?;
         Ok(())
     }
 
