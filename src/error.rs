@@ -61,7 +61,7 @@ pub struct ErrorReply {
 }
 
 impl ErrorReply {
-    fn message<S: ToString>(message: S) -> Self {
+    pub fn message<S: ToString>(message: S) -> Self {
         ErrorReply {
             message: Some(message.to_string()),
             ..Default::default()

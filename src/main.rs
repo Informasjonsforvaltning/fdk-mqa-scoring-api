@@ -26,7 +26,7 @@ use uuid::Uuid;
 use crate::{
     database::{DatabaseError, PgPool},
     db_models::{DatasetAssessment, Dimension},
-    error::Error,
+    error::{Error, ErrorReply},
     models::{DatasetsRequest, DatasetsScores, SuccessResponse},
 };
 
@@ -169,6 +169,8 @@ async fn update_assessment(
             e
         })?;
     let dataset_uri = update.scores.as_ref().dataset.id.clone();
+    let dataset_uri_for_log = dataset_uri.clone();
+    let assessment_id_for_log = uuid.to_string();
 
     let result: Result<(), DatabaseError> = web::block(move || {
         // Obtaining a connection from the pool is also a potentially blocking operation.
@@ -206,6 +208,18 @@ async fn update_assessment(
             Ok(HttpResponse::Accepted()
                 .content_type(mime::APPLICATION_JSON)
                 .message_body(serde_json::to_string(&response)?))
+        }
+        Err(e) if e.is_duplicate_dataset_uri() => {
+            tracing::error!(
+                dataset_uri = %dataset_uri_for_log,
+                assessment_id = %assessment_id_for_log,
+                "duplicate dataset_uri: assessment with same URI but different id already stored"
+            );
+            Ok(HttpResponse::Conflict()
+                .content_type(mime::APPLICATION_JSON)
+                .message_body(serde_json::to_string(&ErrorReply::message(
+                    "duplicate dataset_uri: assessment with same URI but different id already stored",
+                ))?))
         }
         Err(e) => Err(e.into()),
     }
