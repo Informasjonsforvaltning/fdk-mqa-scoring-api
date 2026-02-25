@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use diesel::{
     expression_methods::ExpressionMethods,
     r2d2::{ConnectionManager, Pool, PooledConnection},
-    result, Connection, PgConnection, QueryDsl, RunQueryDsl,
+    result::{self, DatabaseErrorKind, Error as DieselError},
+    Connection, PgConnection, QueryDsl, RunQueryDsl,
 };
 use uuid::Uuid;
 
@@ -35,6 +36,20 @@ pub enum DatabaseError {
     DieselMigrationError(#[from] diesel_migrations::MigrationError),
     #[error(transparent)]
     SerdeError(#[from] serde_json::Error),
+}
+
+impl DatabaseError {
+    /// Returns true if this error is a unique constraint violation on
+    /// `dataset_assessments.dataset_uri` (same URI already stored with another id).
+    pub fn is_duplicate_dataset_uri(&self) -> bool {
+        matches!(
+            self,
+            DatabaseError::DieselError(DieselError::DatabaseError(
+                DatabaseErrorKind::UniqueViolation,
+                ref info,
+            )) if info.constraint_name().as_deref() == Some("dataset_assessments_dataset_uri_key")
+        )
+    }
 }
 
 /// Retrieves an environment variable, returning a `DatabaseError` if not found.
