@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 actix-cors = "0.7.1"
 actix-web = "4.13.0"
-diesel = { version = "2.3.8", features = ["postgres", "r2d2"] }
+diesel = { version = "2.3.9", features = ["postgres", "r2d2"] }
 diesel_migrations = { version = "2.3.2", features = ["postgres"] }
 http = "1.4.0"
 lazy_static = "1.5.0"
@@ -18,7 +18,7 @@ serde_yaml = "0.9.34"
 thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber =  { version = "0.3.23", features = ["json", "env-filter", "tracing-log"] }
-utoipa = "5.4.0"
+utoipa = "5.5.0"
 utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
 uuid = { version = "1.23.1", features = ["v4"] }
 
