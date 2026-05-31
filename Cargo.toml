@@ -8,7 +8,7 @@ actix-cors = "0.7.1"
 actix-web = "4.13.0"
 diesel = { version = "2.3.9", features = ["postgres", "r2d2"] }
 diesel_migrations = { version = "2.3.2", features = ["postgres"] }
-http = "1.4.0"
+http = "1.4.1"
 lazy_static = "1.5.0"
 mime = "0.3.17"
 r2d2 = "0.8.10"
