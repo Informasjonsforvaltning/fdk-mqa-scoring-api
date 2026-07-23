@@ -17,6 +17,13 @@ pub enum Error {
     Unauthorized(String),
     #[error("Not Implemented: {0}")]
     NotImplemented(String),
+    #[error(
+        "duplicate dataset_uri: assessment with same URI but different id already stored"
+    )]
+    DuplicateDatasetUri {
+        dataset_uri: String,
+        assessment_id: String,
+    },
     #[error(transparent)]
     DatabaseError(#[from] database::DatabaseError),
     #[error(transparent)]
@@ -36,6 +43,17 @@ impl ResponseError for Error {
             InvalidUri(_) => HttpResponse::BadRequest().json(ErrorReply::error(self)),
             Unauthorized(_) => HttpResponse::Unauthorized().json(ErrorReply::error(self)),
             NotImplemented(_) => HttpResponse::NotImplemented().json(ErrorReply::message(self)),
+            DuplicateDatasetUri {
+                dataset_uri,
+                assessment_id,
+            } => {
+                tracing::error!(
+                    dataset_uri = %dataset_uri,
+                    assessment_id = %assessment_id,
+                    "duplicate dataset_uri: assessment with same URI but different id already stored"
+                );
+                HttpResponse::Conflict().json(ErrorReply::message(self))
+            }
             SerdeJsonError(ref e) => {
                 tracing::error!(
                     error = format!("{:?}", e).as_str(),

@@ -18,6 +18,7 @@ mod error;
 mod handlers;
 mod http_utils;
 mod models;
+mod mqa_dimensions;
 mod schema;
 
 #[actix_web::main]

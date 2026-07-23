@@ -1,5 +1,6 @@
-use super::schema::*;
 use diesel::sql_types::Double;
+
+use super::schema::*;
 
 #[derive(Insertable, Queryable, AsChangeset)]
 #[diesel(table_name = dataset_assessments)]
@@ -13,7 +14,7 @@ pub struct DatasetAssessment {
 
 #[derive(Insertable, Queryable, AsChangeset)]
 #[diesel(table_name = dimensions)]
-pub struct Dimension {
+pub struct DimensionRow {
     pub dataset_uri: String,
     pub id: String,
     pub score: i32,
@@ -21,8 +22,8 @@ pub struct Dimension {
 }
 
 #[derive(QueryableByName)]
-#[diesel(table_name = dimensions)]
-pub struct DimensionAggregate {
+pub struct DimensionAggregateRow {
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub id: String,
     #[diesel(sql_type = Double)]
     pub score: f64,

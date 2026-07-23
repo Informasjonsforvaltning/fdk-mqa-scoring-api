@@ -7,9 +7,9 @@ use uuid::Uuid;
 
 use crate::{
     auth::validate_api_key,
-    database::{DatabaseError, PgPool},
-    db_models::{DatasetAssessment, Dimension},
-    error::{Error, ErrorReply},
+    database::{AssessmentFormat, PgPool},
+    db_models::{DatasetAssessment, DimensionRow},
+    error::Error,
     http_utils::{
         graph_content_type, parse_json_body, validate_dataset_uris, wants_json_ld,
     },
@@ -28,14 +28,16 @@ pub async fn assessment_graph(
 ) -> Result<impl Responder, Error> {
     let uuid = parse_uuid(id.into_inner())?;
     let accept_json_ld = wants_json_ld(&accept);
+    let format = if accept_json_ld {
+        AssessmentFormat::JsonLd
+    } else {
+        AssessmentFormat::Turtle
+    };
 
     let result = web::block(move || {
         let mut conn = pool.get()?;
-        if accept_json_ld {
-            conn.jsonld_assessment(uuid)?.ok_or(Error::NotFound(uuid))
-        } else {
-            conn.turtle_assessment(uuid)?.ok_or(Error::NotFound(uuid))
-        }
+        conn.assessment_graph(uuid, format)?
+            .ok_or(Error::NotFound(uuid))
     })
     .await
     .map_err(|e| Error::BlockingError(e.into()))?;
@@ -59,10 +61,10 @@ pub async fn update_assessment(
     let uuid = parse_uuid(id.into_inner())?;
     let update: crate::models::ScorePostRequest = parse_json_body(&body, "/api/assessments/{id}")?;
     let dataset_uri = update.scores.as_ref().dataset.id.clone();
-    let dataset_uri_for_log = dataset_uri.clone();
-    let assessment_id_for_log = uuid.to_string();
+    let dataset_uri_for_conflict = dataset_uri.clone();
+    let assessment_id_for_conflict = uuid.to_string();
 
-    let result: Result<(), DatabaseError> = web::block(move || {
+    web::block(move || {
         let mut conn = pool.get()?;
 
         let assessment = DatasetAssessment {
@@ -77,7 +79,7 @@ pub async fn update_assessment(
         conn.store_dataset_assessment(assessment)?;
 
         for dimension in &update.scores.dataset.dimensions {
-            conn.store_dimension(Dimension {
+            conn.store_dimension(DimensionRow {
                 dataset_uri: dataset_uri.clone(),
                 id: dimension.id.clone(),
                 score: dimension.score as i32,
@@ -88,29 +90,22 @@ pub async fn update_assessment(
         Ok(())
     })
     .await
-    .map_err(|e| Error::BlockingError(e.into()))?;
+    .map_err(|e| Error::BlockingError(e.into()))?
+    .map_err(|e: crate::database::DatabaseError| {
+        if e.is_duplicate_dataset_uri() {
+            Error::DuplicateDatasetUri {
+                dataset_uri: dataset_uri_for_conflict,
+                assessment_id: assessment_id_for_conflict,
+            }
+        } else {
+            e.into()
+        }
+    })?;
 
-    match result {
-        Ok(_) => {
-            let response = SuccessResponse::new(true);
-            Ok(HttpResponse::Accepted()
-                .content_type(mime::APPLICATION_JSON)
-                .message_body(serde_json::to_string(&response)?))
-        }
-        Err(e) if e.is_duplicate_dataset_uri() => {
-            tracing::error!(
-                dataset_uri = %dataset_uri_for_log,
-                assessment_id = %assessment_id_for_log,
-                "duplicate dataset_uri: assessment with same URI but different id already stored"
-            );
-            Ok(HttpResponse::Conflict()
-                .content_type(mime::APPLICATION_JSON)
-                .message_body(serde_json::to_string(&ErrorReply::message(
-                    "duplicate dataset_uri: assessment with same URI but different id already stored",
-                ))?))
-        }
-        Err(e) => Err(e.into()),
-    }
+    let response = SuccessResponse::new(true);
+    Ok(HttpResponse::Accepted()
+        .content_type(mime::APPLICATION_JSON)
+        .message_body(serde_json::to_string(&response)?))
 }
 
 #[post("/api/assessments")]
