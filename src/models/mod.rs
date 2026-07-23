@@ -1,11 +1,5 @@
-#![allow(unused_imports)]
-
-pub mod _api_assessments__uuid__get_200_response_inner;
-pub use self::_api_assessments__uuid__get_200_response_inner::ApiAssessmentsUuidGet200ResponseInner;
 pub mod dataset_score;
 pub use self::dataset_score::DatasetScore;
-pub mod datasets_graphs;
-pub use self::datasets_graphs::DatasetsGraphs;
 pub mod datasets_request;
 pub use self::datasets_request::DatasetsRequest;
 pub mod datasets_scores;
@@ -14,8 +8,6 @@ pub mod dimension;
 pub use self::dimension::Dimension;
 pub mod dimension_aggregate;
 pub use self::dimension_aggregate::DimensionAggregate;
-pub mod error;
-pub use self::error::Error;
 pub mod metric;
 pub use self::metric::Metric;
 pub mod score;
