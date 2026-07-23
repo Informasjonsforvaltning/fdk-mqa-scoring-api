@@ -15,6 +15,8 @@ pub enum Error {
     InvalidUri(#[from] http::uri::InvalidUri),
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
+    #[error("Not Implemented: {0}")]
+    NotImplemented(String),
     #[error(transparent)]
     DatabaseError(#[from] database::DatabaseError),
     #[error(transparent)]
@@ -33,6 +35,7 @@ impl ResponseError for Error {
             InvalidID(_) => HttpResponse::BadRequest().json(ErrorReply::error(self)),
             InvalidUri(_) => HttpResponse::BadRequest().json(ErrorReply::error(self)),
             Unauthorized(_) => HttpResponse::Unauthorized().json(ErrorReply::error(self)),
+            NotImplemented(_) => HttpResponse::NotImplemented().json(ErrorReply::message(self)),
             SerdeJsonError(ref e) => {
                 tracing::error!(
                     error = format!("{:?}", e).as_str(),
