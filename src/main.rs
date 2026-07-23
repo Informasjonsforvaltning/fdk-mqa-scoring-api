@@ -282,75 +282,43 @@ async fn scores(pool: web::Data<PgPool>, body: web::Bytes) -> Result<impl Respon
 }
 
 #[post("/api/assessments")]
-async fn assessments(
-    accept: web::Header<header::Accept>,
-    pool: web::Data<PgPool>,
-    body: web::Bytes,
-) -> Result<impl Responder, Error> {
+async fn assessments(body: web::Bytes) -> Result<HttpResponse, Error> {
     let body_str = from_utf8(&body)?;
     tracing::debug!(
         endpoint = "/api/assessments",
         body_length = body.len(),
-        body_preview = if body_str.len() > 200 { 
-            &body_str[..200] 
-        } else { 
-            body_str 
+        body_preview = if body_str.len() > 200 {
+            &body_str[..200]
+        } else {
+            body_str
         },
         "Parsing request body for assessments"
     );
-    
-    let data = serde_json::from_str::<DatasetsRequest>(body_str)
-        .map_err(|e| {
-            tracing::error!(
-                endpoint = "/api/assessments",
-                body_length = body.len(),
-                body_preview = if body_str.len() > 500 { 
-                    &body_str[..500] 
-                } else { 
-                    body_str 
-                },
-                error = format!("{:?}", e).as_str(),
-                "Failed to parse JSON in assessments endpoint"
-            );
-            e
-        })?;
+
+    let data = serde_json::from_str::<DatasetsRequest>(body_str).map_err(|e| {
+        tracing::error!(
+            endpoint = "/api/assessments",
+            body_length = body.len(),
+            body_preview = if body_str.len() > 500 {
+                &body_str[..500]
+            } else {
+                body_str
+            },
+            error = format!("{:?}", e).as_str(),
+            "Failed to parse JSON in assessments endpoint"
+        );
+        e
+    })?;
     // Check that uris are valid, but disregard parsed value.
     let _parsed_dataset_uris = data
         .datasets
         .iter()
         .map(|uri| uri.parse::<Uri>())
         .collect::<Result<Vec<Uri>, InvalidUri>>()?;
-    let accept_json_ld = accept
-        .0
-        .iter()
-        .any(|qi| qi.item.to_string() == "application/ld+json");
 
-    let result: Result<String, DatabaseError> = web::block(move || {
-        // Obtaining a connection from the pool is also a potentially blocking operation.
-        // So, it should be called within the `web::block` closure, as well.
-        let mut _conn = pool.get()?;
-
-        if accept_json_ld {
-            // TODO: fetch graphs in jsonld format
-            Ok("".to_string())
-        } else {
-            // TODO: fetch graphs in turtle format
-            Ok("".to_string())
-        }
-    })
-    .await
-    .map_err(|e| Error::BlockingError(e.into()))?;
-
-    match result {
-        Ok(graph) => Ok(HttpResponse::Ok()
-            .content_type(if accept_json_ld {
-                "application/ld+json"
-            } else {
-                "text/turtle"
-            })
-            .message_body(graph)),
-        Err(e) => Err(e.into()),
-    }
+    Err(Error::NotImplemented(
+        "batch assessment retrieval is not implemented".to_string(),
+    ))
 }
 
 fn cors() -> Cors {
@@ -537,6 +505,34 @@ mod tests {
             let cors_header = resp.headers().get("access-control-allow-origin").unwrap();
             assert_eq!(cors_header, HeaderValue::from_str(origin).unwrap());
         }
+    }
+
+    #[actix_web::test]
+    async fn test_assessments_not_implemented() {
+        match from_filename(".env.test") {
+            Ok(_) => println!("Successfully loaded .env.test"),
+            Err(err) => println!("Error loading .env.test: {}", err),
+        }
+
+        let app = test::init_service(app()).await;
+
+        let req = test::TestRequest::post()
+            .insert_header(ContentType::json())
+            .insert_header(("Origin", "http://localhost:8080"))
+            .set_json(
+                serde_json::from_str::<Value>(
+                    r#"{
+                    "datasets": [
+                        "https://dataset.foo"
+                    ]
+                }"#,
+                )
+                .unwrap(),
+            )
+            .uri("/api/assessments")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
     }
 
     #[actix_web::test]
