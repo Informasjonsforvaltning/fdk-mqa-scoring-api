@@ -35,17 +35,12 @@ mod database;
 mod db_models;
 mod error;
 mod http_utils;
-#[allow(dead_code, non_snake_case)]
 mod models;
 mod schema;
 
 lazy_static! {
     static ref API_KEY: String = env::var("API_KEY").unwrap_or_else(|e| {
         tracing::error!(error = e.to_string().as_str(), "API_KEY not found");
-        std::process::exit(1)
-    });
-    static ref ENVIRONMENT: String = env::var("ENVIRONMENT").unwrap_or_else(|e| {
-        tracing::error!(error = e.to_string().as_str(), "ENVIRONMENT not found");
         std::process::exit(1)
     });
     static ref ALLOWED_ORIGINS: String = env::var("CORS_ORIGIN_PATTERNS").unwrap_or_else(|e| {
@@ -484,7 +479,6 @@ mod tests {
             .uri(&path)
             .to_request();
         let resp = test::call_service(&app, req).await;
-        //println!("{:?}", resp.response().body());
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
         let req = test::TestRequest::post()
@@ -495,7 +489,6 @@ mod tests {
             .uri(&path)
             .to_request();
         let resp = test::call_service(&app, req).await;
-        //println!("{:?}", resp.response().body());
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
         let req = test::TestRequest::post()
@@ -506,7 +499,6 @@ mod tests {
             .uri(&path)
             .to_request();
         let resp = test::call_service(&app, req).await;
-        //println!("{:?}", resp.response().body());
         assert!(resp.status().is_success());
 
         let req = test::TestRequest::get()

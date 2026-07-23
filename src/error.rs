@@ -49,7 +49,7 @@ impl ResponseError for Error {
                 tracing::error!(
                     error = format!("{:?}", self).as_str(),
                     error_type = format!("{:?}", std::mem::discriminant(self)).as_str(),
-                    "error occured when processing request"
+                    "error occurred when processing request"
                 );
                 HttpResponse::InternalServerError().json(ErrorReply::error(self))
             }
