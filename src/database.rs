@@ -4,18 +4,26 @@ use diesel::{
     expression_methods::ExpressionMethods,
     r2d2::{ConnectionManager, Pool, PooledConnection},
     result::{self, DatabaseErrorKind, Error as DieselError},
+    sql_types::{Array, Text},
     Connection, PgConnection, QueryDsl, RunQueryDsl,
 };
 use uuid::Uuid;
 
 use crate::{
-    db_models::{DatasetAssessment, Dimension, DimensionAggregate},
-    models, schema,
+    db_models::{DatasetAssessment, DimensionAggregateRow, DimensionRow},
+    models, mqa_dimensions, schema,
 };
 
 /// Embedded database migrations for automatic schema management.
-pub const MIGRATIONS: diesel_migrations::EmbeddedMigrations = diesel_migrations::embed_migrations!("./migrations");
+pub const MIGRATIONS: diesel_migrations::EmbeddedMigrations =
+    diesel_migrations::embed_migrations!("./migrations");
 type DB = diesel::pg::Pg;
+
+/// Assessment graph serialization format stored for a dataset assessment.
+pub enum AssessmentFormat {
+    Turtle,
+    JsonLd,
+}
 
 /// Runs all pending database migrations on the given connection.
 fn run_migration(conn: &mut impl diesel_migrations::MigrationHarness<DB>) {
@@ -36,6 +44,8 @@ pub enum DatabaseError {
     DieselMigrationError(#[from] diesel_migrations::MigrationError),
     #[error(transparent)]
     SerdeError(#[from] serde_json::Error),
+    #[error("empty json_score for dataset URI '{dataset_uri}'")]
+    EmptyJsonScore { dataset_uri: String },
 }
 
 impl DatabaseError {
@@ -58,7 +68,7 @@ fn var(key: &'static str) -> Result<String, DatabaseError> {
 }
 
 /// Constructs a PostgreSQL connection URL from environment variables.
-/// 
+///
 /// Required environment variables:
 /// - `POSTGRES_HOST`: Database hostname
 /// - `POSTGRES_PORT`: Database port number
@@ -79,7 +89,7 @@ fn database_url() -> Result<String, DatabaseError> {
 }
 
 /// Runs all pending database migrations.
-/// 
+///
 /// This function establishes a connection to the database and applies any
 /// pending migrations defined in the `migrations/` directory.
 pub fn migrate_database() -> Result<(), DatabaseError> {
@@ -91,7 +101,7 @@ pub fn migrate_database() -> Result<(), DatabaseError> {
 }
 
 /// A connection pool for PostgreSQL database connections.
-/// 
+///
 /// Uses r2d2 for connection pooling with a maximum of 2 connections.
 /// Connections are tested on checkout to ensure they're still valid.
 #[derive(Clone)]
@@ -99,7 +109,7 @@ pub struct PgPool(Pool<ConnectionManager<PgConnection>>);
 
 impl PgPool {
     /// Creates a new connection pool.
-    /// 
+    ///
     /// The pool is configured with:
     /// - Maximum size: 2 connections
     /// - Test on checkout: enabled (validates connections before use)
@@ -115,7 +125,7 @@ impl PgPool {
     }
 
     /// Gets a connection from the pool.
-    /// 
+    ///
     /// Returns an error if no connections are available or if the pool is closed.
     pub fn get(&self) -> Result<PgConn, DatabaseError> {
         Ok(PgConn(self.0.get()?))
@@ -123,28 +133,28 @@ impl PgPool {
 }
 
 /// A pooled PostgreSQL database connection.
-/// 
+///
 /// This connection is automatically returned to the pool when dropped.
 pub struct PgConn(PooledConnection<ConnectionManager<PgConnection>>);
 
 impl PgConn {
     /// Tests the database connection by performing a lightweight query.
-    /// 
+    ///
     /// This is used by the `/ready` endpoint to verify database connectivity.
     /// Uses a simple `SELECT 1` query which is the most efficient way to test
     /// a connection without touching any tables.
     pub fn test_connection(&mut self) -> Result<(), DatabaseError> {
+        use diesel::deserialize::QueryableByName;
         use diesel::sql_query;
         use diesel::sql_types::Integer;
-        use diesel::deserialize::QueryableByName;
-        
+
         #[derive(QueryableByName)]
         struct TestResult {
             #[diesel(sql_type = Integer)]
             #[diesel(column_name = "one")]
             _value: i32,
         }
-        
+
         // Use a simple SELECT 1 query with an alias - this is the lightest possible query
         // and doesn't require any table access or counting
         let _: TestResult = sql_query("SELECT 1 AS one").get_result(&mut self.0)?;
@@ -152,10 +162,13 @@ impl PgConn {
     }
 
     /// Stores or updates a dataset assessment in the database.
-    /// 
+    ///
     /// If an assessment with the same ID already exists, it will be updated.
     /// Otherwise, a new assessment will be inserted.
-    pub fn store_dataset_assessment(&mut self, assessment: DatasetAssessment) -> Result<(), DatabaseError> {
+    pub fn store_dataset_assessment(
+        &mut self,
+        assessment: DatasetAssessment,
+    ) -> Result<(), DatabaseError> {
         use schema::dataset_assessments::dsl;
 
         diesel::insert_into(dsl::dataset_assessments)
@@ -169,10 +182,10 @@ impl PgConn {
     }
 
     /// Stores or updates a dimension score for a dataset.
-    /// 
+    ///
     /// If a dimension with the same dataset URI and ID already exists, it will be updated.
     /// Otherwise, a new dimension will be inserted.
-    pub fn store_dimension(&mut self, dimension: Dimension) -> Result<(), DatabaseError> {
+    pub fn store_dimension(&mut self, dimension: DimensionRow) -> Result<(), DatabaseError> {
         use schema::dimensions::dsl;
 
         diesel::insert_into(dsl::dimensions)
@@ -186,7 +199,7 @@ impl PgConn {
     }
 
     /// Deletes all dimension records for a given dataset URI.
-    /// 
+    ///
     /// This is typically called when updating a dataset assessment to remove
     /// old dimension data before inserting new values.
     pub fn drop_dataset_dimensions(&mut self, dataset_uri: &str) -> Result<(), DatabaseError> {
@@ -199,40 +212,29 @@ impl PgConn {
         Ok(())
     }
 
-    /// Retrieves the Turtle (RDF) format assessment for a given dataset assessment ID.
-    /// 
-    /// Returns `None` if the assessment doesn't exist, or `Some(turtle_string)` if found.
-    pub fn turtle_assessment(
+    /// Retrieves an assessment graph for a given dataset assessment ID.
+    ///
+    /// Returns `None` if the assessment doesn't exist, or `Some(graph)` if found.
+    pub fn assessment_graph(
         &mut self,
         dataset_assessment: Uuid,
+        format: AssessmentFormat,
     ) -> Result<Option<String>, DatabaseError> {
         use schema::dataset_assessments::dsl;
 
-        match dsl::dataset_assessments
-            .filter(dsl::id.eq(dataset_assessment.to_string()))
-            .select(dsl::turtle_assessment)
-            .first(&mut self.0)
-        {
-            Ok(assessment) => Ok(Some(assessment)),
-            Err(result::Error::NotFound) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
-    }
+        let id = dataset_assessment.to_string();
+        let result = match format {
+            AssessmentFormat::Turtle => dsl::dataset_assessments
+                .filter(dsl::id.eq(&id))
+                .select(dsl::turtle_assessment)
+                .first(&mut self.0),
+            AssessmentFormat::JsonLd => dsl::dataset_assessments
+                .filter(dsl::id.eq(&id))
+                .select(dsl::jsonld_assessment)
+                .first(&mut self.0),
+        };
 
-    /// Retrieves the JSON-LD format assessment for a given dataset assessment ID.
-    /// 
-    /// Returns `None` if the assessment doesn't exist, or `Some(jsonld_string)` if found.
-    pub fn jsonld_assessment(
-        &mut self,
-        dataset_assessment: Uuid,
-    ) -> Result<Option<String>, DatabaseError> {
-        use schema::dataset_assessments::dsl;
-
-        match dsl::dataset_assessments
-            .filter(dsl::id.eq(dataset_assessment.to_string()))
-            .select(dsl::jsonld_assessment)
-            .first(&mut self.0)
-        {
+        match result {
             Ok(assessment) => Ok(Some(assessment)),
             Err(result::Error::NotFound) => Ok(None),
             Err(e) => Err(e.into()),
@@ -240,19 +242,16 @@ impl PgConn {
     }
 
     /// Retrieves JSON score data for multiple datasets.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `dataset_uris` - A vector of dataset URIs to fetch scores for
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A HashMap mapping dataset URIs to their `DatasetScore` objects.
-    /// 
-    /// # Note
-    /// 
-    /// Ensure that URIs are valid before calling this function, as they are
-    /// used directly in the SQL query.
+    ///
+    /// URIs are filtered with Diesel `eq_any` (bound parameters).
     pub fn json_scores(
         &mut self,
         dataset_uris: &Vec<String>,
@@ -275,37 +274,26 @@ impl PgConn {
                 if json.is_empty() {
                     tracing::error!(
                         dataset_uri = dataset_uri.as_str(),
-                        json_length = json.len(),
                         "Empty JSON string found in database for dataset"
                     );
-                    // Create an EOF error by attempting to parse empty string
-                    let e = serde_json::from_str::<models::DatasetScore>("")
-                        .map_err(|e| {
-                            tracing::error!(
-                                dataset_uri = dataset_uri.as_str(),
-                                error = format!("{:?}", e).as_str(),
-                                "Empty JSON string in database caused EOF error"
-                            );
-                            DatabaseError::SerdeError(e)
-                        })
-                        .unwrap_err();
-                    return Err(e);
+                    return Err(DatabaseError::EmptyJsonScore { dataset_uri });
                 }
-                serde_json::from_str(&json).map_err(|e| {
-                    tracing::error!(
-                        dataset_uri = dataset_uri.as_str(),
-                        json_length = json.len(),
-                        json_preview = if json.len() > 500 { 
-                            &json[..500] 
-                        } else { 
-                            &json 
-                        },
-                        error = format!("{:?}", e).as_str(),
-                        "Failed to parse JSON from database in json_scores"
-                    );
-                    DatabaseError::SerdeError(e)
-                })
-                .map(|score| (dataset_uri, score))
+                serde_json::from_str(&json)
+                    .map_err(|e| {
+                        tracing::error!(
+                            dataset_uri = dataset_uri.as_str(),
+                            json_length = json.len(),
+                            json_preview = if json.len() > 500 {
+                                &json[..500]
+                            } else {
+                                &json
+                            },
+                            error = format!("{:?}", e).as_str(),
+                            "Failed to parse JSON from database in json_scores"
+                        );
+                        DatabaseError::SerdeError(e)
+                    })
+                    .map(|score| (dataset_uri, score))
             })
             .collect::<Result<HashMap<String, models::DatasetScore>, DatabaseError>>()?;
 
@@ -313,58 +301,35 @@ impl PgConn {
     }
 
     /// Calculates average dimension scores across multiple datasets.
-    /// 
+    ///
     /// This function aggregates dimension scores (accessibility, findability, etc.)
     /// by computing the average score and max_score for each dimension type
     /// across all specified datasets.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `dataset_uris` - A vector of dataset URIs to aggregate dimensions for
-    /// 
+    ///
     /// # Returns
-    /// 
-    /// A vector of `DimensionAggregate` objects, sorted in a predefined order:
-    /// 1. Interoperability
-    /// 2. Findability
-    /// 3. Accessibility
-    /// 4. Contextuality
-    /// 5. Reusability
-    /// 
-    /// # Note
-    /// 
-    /// Ensure that URIs are valid before calling this function, as they are
-    /// used directly in the SQL query. The results are sorted to ensure
-    /// consistent ordering in API responses.
+    ///
+    /// A vector of `DimensionAggregate` objects, sorted by [`mqa_dimensions::DIMENSION_ORDER`].
     pub fn dimension_aggregates(
         &mut self,
         dataset_uris: &Vec<String>,
     ) -> Result<Vec<models::DimensionAggregate>, DatabaseError> {
-        let q = format!(
-            "SELECT id, AVG(score)::float8 AS score, AVG(max_score)::float8 AS max_score
-             FROM dimensions WHERE dataset_uri in ({}) GROUP BY id ORDER BY id",
-            dataset_uris
-                .iter()
-                .map(|uri| format!("'{uri}'"))
-                .collect::<Vec<String>>()
-                .join(",")
-        );
-        let aggregates: Vec<DimensionAggregate> =
-            diesel::dsl::sql_query(q).get_results(&mut self.0)?;
+        use diesel::sql_query;
 
-        // Define the expected order for consistent API responses
-        let order = [
-            "https://data.norge.no/vocabulary/dcatno-mqa#interoperability",
-            "https://data.norge.no/vocabulary/dcatno-mqa#findability",
-            "https://data.norge.no/vocabulary/dcatno-mqa#accessibility",
-            "https://data.norge.no/vocabulary/dcatno-mqa#contextuality",
-            "https://data.norge.no/vocabulary/dcatno-mqa#reusability",
-        ];
+        let aggregates: Vec<DimensionAggregateRow> = sql_query(
+            "SELECT id, AVG(score)::float8 AS score, AVG(max_score)::float8 AS max_score \
+             FROM dimensions WHERE dataset_uri = ANY($1) GROUP BY id",
+        )
+        .bind::<Array<Text>, _>(dataset_uris)
+        .get_results(&mut self.0)?;
 
         let mut result: Vec<models::DimensionAggregate> = aggregates
             .into_iter()
             .map(
-                |DimensionAggregate {
+                |DimensionAggregateRow {
                      id,
                      score,
                      max_score,
@@ -376,10 +341,15 @@ impl PgConn {
             )
             .collect();
 
-        // Sort by the predefined order to ensure consistent API responses
         result.sort_by(|a, b| {
-            let a_pos = order.iter().position(|&x| x == a.id).unwrap_or(usize::MAX);
-            let b_pos = order.iter().position(|&x| x == b.id).unwrap_or(usize::MAX);
+            let a_pos = mqa_dimensions::DIMENSION_ORDER
+                .iter()
+                .position(|&x| x == a.id)
+                .unwrap_or(usize::MAX);
+            let b_pos = mqa_dimensions::DIMENSION_ORDER
+                .iter()
+                .position(|&x| x == b.id)
+                .unwrap_or(usize::MAX);
             a_pos.cmp(&b_pos)
         });
 
