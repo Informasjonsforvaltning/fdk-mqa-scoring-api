@@ -17,9 +17,7 @@ pub enum Error {
     Unauthorized(String),
     #[error("Not Implemented: {0}")]
     NotImplemented(String),
-    #[error(
-        "duplicate dataset_uri: assessment with same URI but different id already stored"
-    )]
+    #[error("duplicate dataset_uri: assessment with same URI but different id already stored")]
     DuplicateDatasetUri {
         dataset_uri: String,
         assessment_id: String,

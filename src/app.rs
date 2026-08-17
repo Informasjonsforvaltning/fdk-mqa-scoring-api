@@ -12,8 +12,10 @@ use crate::{
     handlers::{
         assessments::{assessment_graph, assessments, update_assessment},
         health::{ping, ready},
+        metrics::metrics,
         scores::scores,
     },
+    metrics::{register_metrics, HttpMetrics},
 };
 
 pub fn app() -> App<
@@ -29,12 +31,16 @@ pub fn app() -> App<
 
     let openapi = serde_yaml::from_str::<OpenApi>(include_str!("../openapi.yaml")).unwrap();
 
+    register_metrics();
+
     App::new()
         .wrap(cors())
+        .wrap(HttpMetrics)
         .app_data(web::PayloadConfig::default().limit(50_000_000)) // 50 MB limit
         .app_data(web::Data::new(pool.clone()))
         .service(ping)
         .service(ready)
+        .service(metrics)
         .service(assessment_graph)
         .service(update_assessment)
         .service(assessments)
@@ -108,6 +114,32 @@ mod tests {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
+    }
+
+    #[actix_web::test]
+    async fn test_metrics() {
+        setup();
+        let app = test::init_service(app()).await;
+
+        let ping_req = TestRequest::get()
+            .insert_header(ContentType::plaintext())
+            .insert_header(("Origin", ORIGIN))
+            .uri("/ping")
+            .to_request();
+        let ping_resp = test::call_service(&app, ping_req).await;
+        assert!(ping_resp.status().is_success());
+
+        let req = TestRequest::get()
+            .insert_header(ContentType::plaintext())
+            .insert_header(("Origin", ORIGIN))
+            .uri("/metrics")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+
+        let body = String::from_utf8(test::read_body(resp).await.to_vec()).unwrap();
+        assert!(body.contains("http_requests_total"));
+        assert!(body.contains("http_request_duration_seconds"));
     }
 
     #[actix_web::test]
@@ -232,7 +264,8 @@ mod tests {
         setup();
         let app = test::init_service(app()).await;
 
-        let resp = test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
+        let resp =
+            test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
         assert!(resp.status().is_success());
 
         let req = TestRequest::get()
@@ -251,7 +284,8 @@ mod tests {
         setup();
         let app = test::init_service(app()).await;
 
-        let resp = test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
+        let resp =
+            test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
         assert!(resp.status().is_success());
 
         let post = post_fixture();
@@ -271,7 +305,8 @@ mod tests {
         setup();
         let app = test::init_service(app()).await;
 
-        let resp = test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
+        let resp =
+            test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
         assert!(resp.status().is_success());
 
         let req = TestRequest::post()
@@ -293,7 +328,8 @@ mod tests {
         Uuid::parse_str(ASSESSMENT_ID).unwrap();
         Uuid::parse_str(CONFLICT_ASSESSMENT_ID).unwrap();
 
-        let resp = test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
+        let resp =
+            test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
         assert!(resp.status().is_success());
 
         let resp = test::call_service(
