@@ -17,6 +17,7 @@ mod db_models;
 mod error;
 mod handlers;
 mod http_utils;
+mod metrics;
 mod models;
 mod mqa_dimensions;
 mod schema;

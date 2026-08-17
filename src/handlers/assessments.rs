@@ -1,8 +1,4 @@
-use actix_web::{
-    get,
-    http::header,
-    post, web, HttpRequest, HttpResponse, Responder,
-};
+use actix_web::{get, http::header, post, web, HttpRequest, HttpResponse, Responder};
 use uuid::Uuid;
 
 use crate::{
@@ -10,9 +6,7 @@ use crate::{
     database::{AssessmentFormat, PgPool},
     db_models::{DatasetAssessment, DimensionRow},
     error::Error,
-    http_utils::{
-        graph_content_type, parse_json_body, validate_dataset_uris, wants_json_ld,
-    },
+    http_utils::{graph_content_type, parse_json_body, validate_dataset_uris, wants_json_ld},
     models::{DatasetsRequest, SuccessResponse},
 };
 
