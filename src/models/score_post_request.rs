@@ -12,8 +12,6 @@
 pub struct ScorePostRequest {
     #[serde(rename = "turtle_assessment")]
     pub turtle_assessment: String,
-    #[serde(rename = "jsonld_assessment")]
-    pub jsonld_assessment: String,
     #[serde(rename = "scores")]
     pub scores: Box<crate::models::DatasetScore>,
 }

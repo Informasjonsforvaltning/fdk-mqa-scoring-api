@@ -8,6 +8,7 @@ use crate::{
     error::Error,
     http_utils::{graph_content_type, parse_json_body, validate_dataset_uris, wants_json_ld},
     models::{DatasetsRequest, SuccessResponse},
+    rdf::turtle_to_jsonld,
 };
 
 fn parse_uuid(uuid: String) -> Result<Uuid, Error> {
@@ -54,6 +55,7 @@ pub async fn update_assessment(
     validate_api_key(request)?;
     let uuid = parse_uuid(id.into_inner())?;
     let update: crate::models::ScorePostRequest = parse_json_body(&body, "/api/assessments/{id}")?;
+    let jsonld_assessment = turtle_to_jsonld(&update.turtle_assessment)?;
     let dataset_uri = update.scores.as_ref().dataset.id.clone();
     let dataset_uri_for_conflict = dataset_uri.clone();
     let assessment_id_for_conflict = uuid.to_string();
@@ -65,7 +67,7 @@ pub async fn update_assessment(
             id: uuid.to_string(),
             dataset_uri: dataset_uri.clone(),
             turtle_assessment: update.turtle_assessment.clone(),
-            jsonld_assessment: update.jsonld_assessment.clone(),
+            jsonld_assessment,
             json_score: serde_json::to_string(&update.scores)?,
         };
 
