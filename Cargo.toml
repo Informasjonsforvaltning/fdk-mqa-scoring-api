@@ -11,6 +11,7 @@ diesel_migrations = { version = "2.3.2", features = ["postgres"] }
 http = "1.5.0"
 lazy_static = "1.5.1"
 mime = "0.3.17"
+oxrdfio = "0.2.6"
 prometheus = "0.14.0"
 r2d2 = "0.8.10"
 serde = { version = "1.0.229", features = ["derive"] }

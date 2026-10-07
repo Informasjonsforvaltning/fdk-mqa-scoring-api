@@ -20,6 +20,7 @@ mod http_utils;
 mod metrics;
 mod models;
 mod mqa_dimensions;
+mod rdf;
 mod schema;
 
 #[actix_web::main]

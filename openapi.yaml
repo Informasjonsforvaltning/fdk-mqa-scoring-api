@@ -32,13 +32,10 @@ components:
       properties:
         turtle_assessment:
           type: string
-        jsonld_assessment:
-          type: string
         scores:
           $ref: "#/components/schemas/DatasetScore"
       required:
         - turtle_assessment
-        - jsonld_assessment
         - scores
     DatasetsGraphs:
       type: object
@@ -217,14 +214,14 @@ paths:
           required: true
           description: Assessment UUID
       requestBody:
-        description: Assessment in turtle and jsonld format, along with json scores
+        description: Assessment in Turtle format, along with JSON scores. JSON-LD is derived server-side from the Turtle graph.
         required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/ScorePostRequest"
       summary: Store dataset assessment
-      description: Stores a dataset assessment with scores. Requires API key authentication.
+      description: Stores a dataset assessment with scores. JSON-LD is generated from the Turtle graph. Requires API key authentication.
       responses:
         "202":
           description: Assessment accepted for processing

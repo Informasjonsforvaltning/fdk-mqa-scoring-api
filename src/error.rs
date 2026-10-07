@@ -3,7 +3,7 @@ use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::database;
+use crate::{database, rdf::RdfError};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -24,6 +24,8 @@ pub enum Error {
     },
     #[error(transparent)]
     DatabaseError(#[from] database::DatabaseError),
+    #[error(transparent)]
+    RdfError(#[from] RdfError),
     #[error(transparent)]
     Utf8Error(#[from] std::str::Utf8Error),
     #[error(transparent)]
@@ -51,6 +53,15 @@ impl ResponseError for Error {
                     "duplicate dataset_uri: assessment with same URI but different id already stored"
                 );
                 HttpResponse::Conflict().json(ErrorReply::message(self))
+            }
+            RdfError(ref e) => {
+                tracing::error!(
+                    error = format!("{:?}", e).as_str(),
+                    error_message = e.to_string().as_str(),
+                    error_type = "RdfError",
+                    "RDF conversion error occurred"
+                );
+                HttpResponse::BadRequest().json(ErrorReply::error(self))
             }
             SerdeJsonError(ref e) => {
                 tracing::error!(

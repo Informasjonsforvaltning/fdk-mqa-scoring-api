@@ -288,8 +288,10 @@ mod tests {
             test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
         assert!(resp.status().is_success());
 
-        let post = post_fixture();
-        let expected = post["jsonld_assessment"].as_str().unwrap();
+        let expected = crate::rdf::turtle_to_jsonld(
+            post_fixture()["turtle_assessment"].as_str().unwrap(),
+        )
+        .unwrap();
 
         let req = TestRequest::get()
             .insert_header(("Origin", ORIGIN))
