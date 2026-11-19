@@ -18,7 +18,7 @@ use crate::{
     metrics::{register_metrics, HttpMetrics},
 };
 
-pub fn app() -> App<
+pub fn app(pool: PgPool) -> App<
     impl ServiceFactory<
         ServiceRequest,
         Response = ServiceResponse<EitherBody<BoxBody>>,
@@ -27,8 +27,6 @@ pub fn app() -> App<
         InitError = (),
     >,
 > {
-    let pool = PgPool::new().unwrap();
-
     let openapi = serde_yaml::from_str::<OpenApi>(include_str!("../openapi.yaml")).unwrap();
 
     register_metrics();
@@ -37,7 +35,7 @@ pub fn app() -> App<
         .wrap(cors())
         .wrap(HttpMetrics)
         .app_data(web::PayloadConfig::default().limit(50_000_000)) // 50 MB limit
-        .app_data(web::Data::new(pool.clone()))
+        .app_data(web::Data::new(pool))
         .service(ping)
         .service(ready)
         .service(metrics)
@@ -106,7 +104,7 @@ mod tests {
     #[actix_web::test]
     async fn test_ping() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
         let req = TestRequest::get()
             .insert_header(ContentType::plaintext())
             .insert_header(("Origin", ORIGIN))
@@ -119,7 +117,7 @@ mod tests {
     #[actix_web::test]
     async fn test_metrics() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let ping_req = TestRequest::get()
             .insert_header(ContentType::plaintext())
@@ -145,7 +143,7 @@ mod tests {
     #[actix_web::test]
     async fn test_ready() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
         let req = TestRequest::get()
             .insert_header(ContentType::plaintext())
             .insert_header(("Origin", ORIGIN))
@@ -158,7 +156,7 @@ mod tests {
     #[actix_web::test]
     async fn test_404() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let req = TestRequest::get()
             .insert_header(ContentType::plaintext())
@@ -172,7 +170,7 @@ mod tests {
     #[actix_web::test]
     async fn test_cors_allowed_origins() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let origins = [
             "https://example.com",
@@ -200,7 +198,7 @@ mod tests {
     #[actix_web::test]
     async fn test_cors_disallowed_origins() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let req = TestRequest::get()
             .insert_header(("Origin", "https://exxxample.com"))
@@ -216,7 +214,7 @@ mod tests {
     #[actix_web::test]
     async fn test_assessments_not_implemented() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let req = TestRequest::post()
             .insert_header(ContentType::json())
@@ -231,7 +229,7 @@ mod tests {
     #[actix_web::test]
     async fn rejects_missing_api_key() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let req = TestRequest::post()
             .insert_header(ContentType::json())
@@ -246,7 +244,7 @@ mod tests {
     #[actix_web::test]
     async fn rejects_wrong_api_key() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let req = TestRequest::post()
             .insert_header(ContentType::json())
@@ -262,7 +260,7 @@ mod tests {
     #[actix_web::test]
     async fn stores_assessment_and_returns_turtle() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let resp =
             test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
@@ -282,7 +280,7 @@ mod tests {
     #[actix_web::test]
     async fn stores_assessment_and_returns_json_ld() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let resp =
             test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
@@ -305,7 +303,7 @@ mod tests {
     #[actix_web::test]
     async fn returns_scores_for_dataset_uri() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         let resp =
             test::call_service(&app, store_assessment_request(ASSESSMENT_ID).to_request()).await;
@@ -324,7 +322,7 @@ mod tests {
     #[actix_web::test]
     async fn rejects_duplicate_dataset_uri_with_different_id() {
         setup();
-        let app = test::init_service(app()).await;
+        let app = test::init_service(app(PgPool::new().unwrap())).await;
 
         // Keep fixture IDs valid so typos fail loudly.
         Uuid::parse_str(ASSESSMENT_ID).unwrap();
