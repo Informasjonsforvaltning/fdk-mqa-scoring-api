@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use diesel::{
     expression_methods::ExpressionMethods,
@@ -83,7 +83,12 @@ fn database_url() -> Result<String, DatabaseError> {
     let user = var("POSTGRES_USERNAME")?;
     let password = var("POSTGRES_PASSWORD")?;
     let dbname = var("POSTGRES_DB_NAME")?;
-    let url = format!("postgres://{user}:{password}@{host}:{port}/{dbname}");
+    let url = format!(
+        "postgres://{user}:{password}@{host}:{port}/{dbname}\
+         ?connect_timeout=10\
+         &keepalives=1&keepalives_idle=30&keepalives_interval=10&keepalives_count=3\
+         &tcp_user_timeout=60000"
+    );
 
     Ok(url)
 }
@@ -102,8 +107,8 @@ pub fn migrate_database() -> Result<(), DatabaseError> {
 
 /// A connection pool for PostgreSQL database connections.
 ///
-/// Uses r2d2 for connection pooling with a maximum of 2 connections.
-/// Connections are tested on checkout to ensure they're still valid.
+/// A single pool is created at startup and shared by all HTTP workers.
+/// Connections are tested on checkout and recycled periodically.
 #[derive(Clone)]
 pub struct PgPool(Pool<ConnectionManager<PgConnection>>);
 
@@ -111,17 +116,35 @@ impl PgPool {
     /// Creates a new connection pool.
     ///
     /// The pool is configured with:
-    /// - Maximum size: 2 connections
+    /// - Maximum size: `POSTGRES_POOL_SIZE` (default 10)
+    /// - Checkout timeout: 10s (fail fast instead of queueing requests for 30s)
+    /// - Idle timeout 5 min / max lifetime 30 min (drop stale connections)
     /// - Test on checkout: enabled (validates connections before use)
     pub fn new() -> Result<Self, DatabaseError> {
         let url = database_url()?;
+        let max_size = std::env::var("POSTGRES_POOL_SIZE")
+            .ok()
+            .map(|v| {
+                v.parse::<u32>()
+                    .map_err(|e| DatabaseError::ConfigError("POSTGRES_POOL_SIZE", e.to_string()))
+            })
+            .transpose()?
+            .unwrap_or(10);
         let manager = ConnectionManager::new(url);
         let pool = Pool::builder()
-            .max_size(2)
+            .max_size(max_size)
+            .min_idle(Some(1))
+            .connection_timeout(Duration::from_secs(10))
+            .idle_timeout(Some(Duration::from_secs(5 * 60)))
+            .max_lifetime(Some(Duration::from_secs(30 * 60)))
             .test_on_check_out(true)
-            .build(manager)
-            .expect("Could not create a connection pool");
+            .build(manager)?;
         Ok(PgPool(pool))
+    }
+
+    /// Maximum number of connections in the pool.
+    pub fn max_size(&self) -> u32 {
+        self.0.max_size()
     }
 
     /// Gets a connection from the pool.

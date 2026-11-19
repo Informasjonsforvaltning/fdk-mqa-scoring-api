@@ -6,7 +6,11 @@ extern crate serde;
 
 use actix_web::{middleware::Logger, HttpServer};
 
-use crate::{app::app, config::API_KEY, database::migrate_database};
+use crate::{
+    app::app,
+    config::API_KEY,
+    database::{migrate_database, PgPool},
+};
 
 mod app;
 mod auth;
@@ -39,7 +43,13 @@ async fn main() -> std::io::Result<()> {
     // Fail if API_KEY missing
     let _ = API_KEY.clone();
 
-    HttpServer::new(move || app().wrap(Logger::default()))
+    // One pool shared by all workers.
+    let pool = PgPool::new().unwrap();
+    let max_blocking_threads = (pool.max_size() as usize).max(2);
+
+    HttpServer::new(move || app(pool.clone()).wrap(Logger::default()))
+        .workers(config::http_workers())
+        .worker_max_blocking_threads(max_blocking_threads)
         .bind(("0.0.0.0", 8082))?
         .run()
         .await

@@ -66,7 +66,7 @@ pub async fn update_assessment(
         let assessment = DatasetAssessment {
             id: uuid.to_string(),
             dataset_uri: dataset_uri.clone(),
-            turtle_assessment: update.turtle_assessment.clone(),
+            turtle_assessment: update.turtle_assessment,
             jsonld_assessment,
             json_score: serde_json::to_string(&update.scores)?,
         };
